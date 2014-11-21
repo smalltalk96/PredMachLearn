@@ -1,0 +1,114 @@
+---
+title: "Predict for personal activities"
+author: "Percy Tong"
+date: "Thursday, November 20, 2014"
+output:
+  html_document:
+    toc: yes
+---
+
+Background
+---------
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset). 
+
+Load data
+---------
+```{r echo=TRUE}
+library(caret)
+# load data
+dat = read.csv("pml-training.csv")
+#training = dat
+dat1 = read.csv("pml-testing.csv")
+
+```
+
+
+Split data for training and validating
+--------------------------------------
+```{r echo=TRUE}
+dat = dat[,-1:-6]
+dat = dat[!sapply(names(dat), function(n) {sum(is.na(dat[[n]]))/nrow(dat)>0.8})]
+
+set.seed(32323)
+trainfolds <- createFolds(y=dat$classe, k=4, list=TRUE, returnTrain=TRUE)
+set.seed(32323)
+testfolds <- createFolds(y=dat$classe, k=4, list=TRUE, returnTrain=FALSE)
+
+#training = dat[trainfolds[[1]],]
+#testing = dat[testfolds[[1]],]
+inTrain = createDataPartition(dat$classe, p=1/2, list=FALSE)
+training = dat[inTrain,]
+testing = dat[-inTrain,]
+set.seed(32345)
+```
+
+Pre Process
+--------------------------------------
+```{r echo=TRUE}
+#(sapply(names(training), function(x) {length(unique(training[[x]]))}))
+nzv = nearZeroVar(training, saveMetrics=TRUE)
+training = training[, names(training)[!nzv$nzv]]
+testing = testing[, names(training)]
+for(n in names(training)) {
+  if (class(training[[n]]) == "integer") {
+    training[[n]] = as.numeric(training[[n]])
+  }
+}
+numCols = names(training)[sapply(names(training),function(n) {class(training[[n]])=="numeric"})]
+```
+
+Pick feature
+--------------------------------------
+```{r echo=TRUE}
+preProc = preProcess(training[numCols], method=c("pca"), thred=0.95)
+trainPC = predict(preProc, training[numCols])
+```
+
+Predict
+--------------------------------------
+```{r echo=TRUE}
+#boosting
+#modFit1 <- train(training$classe ~ ., method="gbm", data=trainPC, verbose=FALSE)
+#random forrest
+#modFit2 = train(training$classe ~ ., method="rf", trainPC)
+modFit2 = randomForest::randomForest(training$classe ~ ., trainPC)
+#tree
+#modFit3 = train(training$classe ~ ., method="rpart", data=trainPC)
+#Linear discriminant analysis
+#modFit4 = train(training$classe ~ ., method="lda", data=trainPC)
+#pred1 <- predict(modFit1, predict(preProc,testing[,numCols]))
+#pred2 <- predict(modFit2, predict(preProc,testing[,numCols]))
+#pred3 <- predict(modFit3, predict(preProc,testing[,numCols]))
+#pred4 <- predict(modFit4, predict(preProc,testing[,numCols]))
+#predDF <- data.frame(pred1, pred2, pred4)
+#comModFit <- train(testing$classe ~ ., method="gam", data=predDF)
+modFit2
+
+
+```
+
+cross-validate
+----------------------
+```{r echo=TRUE}
+pred <- predict(modFit2, predict(preProc,testing[,numCols]))
+confusionMatrix(pred, testing$classe)
+```
+
+
+Write result for test data
+--------------------------------------
+```{r echo=TRUE}
+pred <- predict(modFit2, predict(preProc, dat1[,numCols]))
+pred
+answers = as.character(pred)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("result\\problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(answers)
+```
+
